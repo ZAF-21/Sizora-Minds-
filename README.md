@@ -102,8 +102,6 @@ The model detects sentiment (one LLM call for triage), but **code makes the esca
 
 ## Quick Start
 
-## Quick Start
-
 ### 1. Create Virtual Environment
 
 **macOS / Linux**
