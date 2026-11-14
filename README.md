@@ -102,27 +102,78 @@ The model detects sentiment (one LLM call for triage), but **code makes the esca
 
 ## Quick Start
 
+## Quick Start
+
+### 1. Create Virtual Environment
+
+**macOS / Linux**
 ```bash
-# 1. Create virtual environment
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
+```
 
-# 2. Install dependencies
+**Windows (PowerShell)**
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+**Windows (Command Prompt)**
+```cmd
+py -m venv .venv
+.venv\Scripts\activate.bat
+```
+
+### 2. Install Dependencies
+
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
 
-# 3. Set up environment
+### 3. Set Up Environment
+
+**macOS / Linux**
+```bash
 cp .env.example .env
-# Edit .env with your API key
+```
 
-# 4. Run tests (golden set gate)
+**Windows (PowerShell)**
+```powershell
+Copy-Item .env.example .env
+```
+
+**Windows (Command Prompt)**
+```cmd
+copy .env.example .env
+```
+
+Edit `.env` and add your API key.
+
+### 4. Run Tests (Golden Set Gate)
+
+```bash
 python -m pytest tests/ -v
+```
 
-# 5. Run demo
+### 5. Run Demo
+
+```bash
 python demo.py
+```
 
-# 6. Launch Gradio interface
+### 6. Launch Gradio Interface
+
+```bash
 python gradio_app.py
 ```
+
+**Note:** Make sure your virtual environment is activated before installing dependencies or running the application. Each developer should create their own `.venv` locally.
+
+One small Windows issue: If PowerShell blocks virtual environment activation due to execution policy, run:
+
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## Project Structure
 
