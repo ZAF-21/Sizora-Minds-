@@ -169,11 +169,11 @@ Copy-Item .env.example .env
 copy .env.example .env
 ```
 
-# Open .env and add your Groq API key:
+Open .env and add your Groq API key:
 
-# GROQ_API_KEY=your-key-here
+GROQ_API_KEY=your-key-here
 
-# Get a free key at: https://console.groq.com/keys
+Get a free key at: https://console.groq.com/keys
 
 # 5. Run tests (golden set gate — should show 142 passed)
 
