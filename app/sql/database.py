@@ -11,6 +11,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "codeforge_sample.
 
 ALLOWED_TABLES = {"sales", "employees"}
 BLOCKED_TABLES = {"users"}
+ALL_TABLES = ALLOWED_TABLES | BLOCKED_TABLES
 MAX_LIMIT = 1000
 
 
@@ -86,6 +87,30 @@ def init_sample_db(path: str = DB_PATH) -> str:
     conn.commit()
     conn.close()
     return path
+
+
+def ensure_sample_db(path: str = DB_PATH) -> str:
+    """Create the sample DB only if it's missing, so instructor writes persist between queries."""
+    if os.path.exists(path):
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            existing = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        finally:
+            conn.close()
+        if ALL_TABLES <= existing:
+            return path
+    return init_sample_db(path)
+
+
+def run_write(sql: str, path: str = DB_PATH) -> list[dict]:
+    """Execute a single validated INSERT/UPDATE (instructor only) and return the affected row count."""
+    conn = sqlite3.connect(path)
+    try:
+        cursor = conn.execute(sql)
+        conn.commit()
+        return [{"rows_affected": cursor.rowcount}]
+    finally:
+        conn.close()
 
 
 def run_readonly(sql: str, path: str = DB_PATH) -> list[dict]:

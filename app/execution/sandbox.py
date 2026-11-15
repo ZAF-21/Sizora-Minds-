@@ -11,6 +11,26 @@ import os
 from pathlib import Path
 from app.config import SANDBOX_TIMEOUT_SECONDS
 
+# Windows needs these for the child Python to start networking/asyncio. Without SYSTEMROOT, Winsock
+# can't load its service providers, and pytest plugins that import asyncio (e.g. anyio) crash with
+# "OSError: [WinError 10106] The requested service provider could not be loaded or initialized".
+_WINDOWS_REQUIRED_ENV = ("SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "TEMP", "TMP", "PATHEXT", "COMSPEC")
+
+
+def _sandbox_env(tmpdir: str) -> dict[str, str]:
+    """Minimal environment for the sandboxed pytest process: no inherited secrets (API keys etc.),
+    HOME pointed at the throwaway temp dir, plus the OS essentials Windows can't run without."""
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": tmpdir,
+        "PYTHONPATH": tmpdir,
+        "LANG": "en_US.UTF-8",
+    }
+    if os.name == "nt":
+        env.update({k: os.environ[k] for k in _WINDOWS_REQUIRED_ENV if k in os.environ})
+        env["USERPROFILE"] = tmpdir
+    return env
+
 
 def run_in_sandbox(code: str, test_code: str, timeout: int = SANDBOX_TIMEOUT_SECONDS) -> dict:
     """
@@ -31,12 +51,7 @@ def run_in_sandbox(code: str, test_code: str, timeout: int = SANDBOX_TIMEOUT_SEC
                 text=True,
                 timeout=timeout,
                 cwd=tmpdir,
-                env={
-                    "PATH": os.environ.get("PATH", ""),
-                    "HOME": tmpdir,
-                    "PYTHONPATH": tmpdir,
-                    "LANG": "en_US.UTF-8",
-                },
+                env=_sandbox_env(tmpdir),
             )
             return {
                 "passed": result.returncode == 0,

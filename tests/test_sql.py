@@ -104,3 +104,52 @@ class TestSQLExecution:
     def test_employee_count(self):
         rows = run_readonly("SELECT COUNT(*) as cnt FROM employees")
         assert rows[0]["cnt"] == 5
+
+
+class TestInstructorSQL:
+    """Instructors are admins: read/insert/update any table, never delete or drop; PII masked."""
+
+    @pytest.fixture(autouse=True)
+    def fresh_db(self):
+        init_sample_db()
+        yield
+        init_sample_db()
+
+    @pytest.mark.parametrize("sql", [
+        "DELETE FROM sales",
+        "DROP TABLE users",
+        "TRUNCATE TABLE sales",
+        "ALTER TABLE sales ADD COLUMN x INT",
+        "UPDATE sales SET amount = 0; DROP TABLE sales",
+        "PRAGMA table_info(sales)",
+    ])
+    def test_destructive_blocked_for_instructor(self, sql):
+        _, errors = validate_sql(sql, role="instructor")
+        assert errors
+
+    @pytest.mark.parametrize("sql", [
+        "SELECT * FROM users",
+        "UPDATE employees SET salary = salary * 1.1 WHERE department = 'Sales'",
+        "INSERT INTO sales VALUES (99, 1, 'x', 10, '2024-01-01', 'East')",
+    ])
+    def test_instructor_allowed(self, sql):
+        _, errors = validate_sql(sql, role="instructor")
+        assert not errors
+
+    def test_student_rules_unchanged(self):
+        assert validate_sql("SELECT * FROM users", role="student")[1]
+        assert validate_sql("UPDATE sales SET amount = 0", role="student")[1]
+
+    def test_update_persists(self):
+        from app.sql.agent import execute_validated_sql
+        res = execute_validated_sql("UPDATE employees SET salary = 1 WHERE id = 1", "instructor")
+        assert res["status"] == "success" and res["results"][0]["rows_affected"] == 1
+        assert run_readonly("SELECT salary FROM employees WHERE id = 1")[0]["salary"] == 1
+
+    def test_users_pii_masked(self):
+        from app.sql.agent import execute_validated_sql
+        row = execute_validated_sql("SELECT * FROM users WHERE id = 1", "instructor")["results"][0]
+        assert row["email"] == "a***@company.com"
+        assert row["phone"] == "******3210"
+        assert row["aadhaar"] == "XXXX-XXXX-0123"
+        assert row["password_hash"] == "[REDACTED]"

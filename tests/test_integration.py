@@ -123,3 +123,31 @@ class TestMeter:
         assert "by_model" in s
         assert "total" in s
         assert s["total"]["calls"] == 0
+
+
+class TestSandboxEnvironment:
+    """The sandbox strips the parent environment (no API keys leak in), but Windows still needs
+    SYSTEMROOT & co. or pytest's asyncio-based plugins crash with WinError 10106."""
+
+    def test_no_secrets_inherited(self, monkeypatch):
+        from app.execution.sandbox import _sandbox_env
+        monkeypatch.setenv("GROQ_API_KEY", "sk-should-not-leak")
+        env = _sandbox_env("/tmp/x")
+        assert "GROQ_API_KEY" not in env
+        assert env["HOME"] == "/tmp/x"
+
+    def test_windows_keeps_systemroot(self, monkeypatch):
+        from app.execution import sandbox
+        monkeypatch.setattr(sandbox.os, "name", "nt")
+        monkeypatch.setenv("SYSTEMROOT", r"C:\Windows")
+        monkeypatch.setenv("TEMP", r"C:\Temp")
+        env = sandbox._sandbox_env(r"C:\sandbox")
+        assert env["SYSTEMROOT"] == r"C:\Windows"
+        assert env["TEMP"] == r"C:\Temp"
+        assert env["USERPROFILE"] == r"C:\sandbox"
+
+    def test_posix_env_unchanged(self, monkeypatch):
+        from app.execution import sandbox
+        monkeypatch.setattr(sandbox.os, "name", "posix")
+        monkeypatch.setenv("SYSTEMROOT", r"C:\Windows")
+        assert set(sandbox._sandbox_env("/tmp/x")) == {"PATH", "HOME", "PYTHONPATH", "LANG"}

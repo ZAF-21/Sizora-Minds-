@@ -105,6 +105,49 @@ class TestTemplates:
         template = match_template("implement a B-tree with deletion")
         assert template is None
 
+    @pytest.mark.parametrize("request_text,expected", [
+        ("give me pallindrome code bro", "palindrome"),
+        ("palindrom checker", "palindrome"),
+        ("write factoral function", "factorial"),
+        ("fizz-buzz program", "fizzbuzz"),
+        ("bubbel sort", "bubble_sort"),
+        ("quik sort code", "quick_sort"),
+        ("binery search", "binary_search"),
+    ])
+    def test_typos_match_template(self, request_text, expected):
+        assert match_template(request_text) is TEMPLATES[expected]
+
+    @pytest.mark.parametrize("request_text,expected", [
+        ("Implement binary search", "binary_search"),
+        ("Write a linear search function", "linear_search"),
+        ("Write bubble sort", "bubble_sort"),
+        ("Implement selection sort", "selection_sort"),
+        ("Write an insertion sort function", "insertion_sort"),
+        ("Write merge sort in python", "merge_sort"),
+        ("Implement quicksort", "quick_sort"),
+        ("Write a function to sort a list please", "merge_sort"),
+    ])
+    def test_search_and_sort_templates(self, request_text, expected):
+        assert match_template(request_text) is TEMPLATES[expected]
+
+    @pytest.mark.parametrize("request_text", [
+        "Count vowels in a string",
+        "merge two sorted arrays",
+        "write a parser for dates",
+    ])
+    def test_fuzzy_no_false_positive(self, request_text):
+        assert match_template(request_text) is None
+
+    @pytest.mark.parametrize("name", list(TEMPLATES))
+    def test_template_passes_own_tests_in_sandbox(self, name):
+        from app.execution.sandbox import run_in_sandbox
+        from app.execution.policy import evaluate_code_policy
+        from app.models import PolicyVerdict
+        t = TEMPLATES[name]
+        assert evaluate_code_policy(t.code).verdict == PolicyVerdict.ALLOW
+        result = run_in_sandbox(t.code, t.tests)
+        assert result["passed"], result["output"][-500:]
+
     def test_all_templates_have_code_and_tests(self):
         for name, t in TEMPLATES.items():
             assert len(t.code.strip()) > 0, f"Template {name} has no code"

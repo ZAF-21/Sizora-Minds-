@@ -124,3 +124,36 @@ class TestCombined:
 
     def test_has_pii_negative(self):
         assert has_pii("Write a function") is False
+
+
+SECRET_MESSAGE = ("my email is john.doe@example.com and key sk-abc123456789012345678901, "
+                  "write a palindrome checker")
+RAW_SECRETS = ["john.doe@example.com", "sk-abc123456789012345678901"]
+
+
+class TestEventLogMasking:
+    """Events are logged only after masking — raw PII must never reach any log record."""
+
+    def test_log_event_masks_every_field(self, caplog):
+        from app.event_log import log_event
+        with caplog.at_level("INFO", logger="codeforge.events"):
+            log_event("test", "student_a", request=SECRET_MESSAGE, nested={"items": [RAW_SECRETS[0]]})
+        assert caplog.records
+        for secret in RAW_SECRETS:
+            assert secret not in caplog.text
+        assert "[EMAIL]" in caplog.text and "[SECRET]" in caplog.text
+
+    def test_ui_pipeline_never_logs_raw_message(self, caplog):
+        import gradio_app
+        with caplog.at_level("DEBUG"):
+            display, _ = gradio_app.process_request(SECRET_MESSAGE, "student_c", False)
+        assert "request_received" in caplog.text and "template_served" in caplog.text
+        for secret in RAW_SECRETS:
+            assert secret not in caplog.text
+            assert secret not in display
+
+    def test_chat_history_stores_masked_message(self):
+        import gradio_app
+        list(gradio_app.chat(SECRET_MESSAGE, "student_b", False))
+        user_turns = [m["content"] for m in gradio_app._ustate("student_b")["chat_history"] if m["role"] == "user"]
+        assert user_turns and all(s not in user_turns[-1] for s in RAW_SECRETS)

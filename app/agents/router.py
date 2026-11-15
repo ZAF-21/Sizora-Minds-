@@ -29,6 +29,7 @@ def create_router_agent():
     llm = ChatGroq(
         model=LLM_CONFIG.small_model,
         temperature=LLM_CONFIG.temperature,
+        max_tokens=LLM_CONFIG.max_tokens,
     )
     return llm.with_structured_output(RoutingResult, method="json_mode")
 

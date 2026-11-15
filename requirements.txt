@@ -7,3 +7,4 @@ sqlglot>=25.0
 sqlalchemy>=2.0
 gradio>=6.0
 python-dotenv>=1.0
+truststore>=0.10

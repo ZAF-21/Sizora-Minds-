@@ -37,8 +37,8 @@ User Request
                     └─────┬───┘   └─────┬──────┘
                           │             │
                     ┌─────┴───┐   ┌─────┴──────┐
-                    │ Sandbox │   │ Read-only  │   R2: Separate process, timeout
-                    │ Execute │   │ Execute    │   R7: Read-only SQLite connection
+                    │ Sandbox │   │ Role-based │   R2: Separate process, timeout
+                    │ Execute │   │ Execute    │   R7: SELECT (+ INSERT/UPDATE for instructors)
                     └─────┬───┘   └────────────┘
                           │
                     ┌─────┴───┐
@@ -58,7 +58,8 @@ Tier 1: PRIMARY model (retry with full-jitter backoff, up to 3 attempts)
 Tier 2: FALLBACK model (1 retry)
   │ failed?
   ▼
-Tier 3: TEMPLATE library (palindrome, factorial, fibonacci, fizzbuzz, list_sum, reverse_string)
+Tier 3: TEMPLATE library (palindrome, factorial, fibonacci, fizzbuzz, list_sum, reverse_string,
+        linear/binary search, bubble/selection/insertion/merge/quick sort)
   │ no match?
   ▼
 Tier 4: Honest failure — "Service unavailable", never hallucinated code
@@ -70,7 +71,7 @@ Chaos Mode (toggle in UI) fails 60% of model calls to prove resilience works.
 
 | Scenario | LLM Calls | What happens |
 |----------|:---------:|-------------|
-| Template match (palindrome, factorial, etc.) | **0** | Verified code from library |
+| Template match (palindrome, factorial, search, sort, etc.) | **0** | Verified code from library |
 | Dangerous request (delete files, hack) | **0** | Regex blocks before any LLM |
 | PII redaction | **0** | Masked by regex at ingress |
 | Role spoof ("I'm an instructor") | **0** | Caught by identity check |
@@ -78,6 +79,8 @@ Chaos Mode (toggle in UI) fails 60% of model calls to prove resilience works.
 | Cache hit (same request twice) | **0** | Idempotency key match |
 | SQL query (student) | **0** | Denied by role check |
 | SQL query (instructor) | **1** | SQL agent only |
+| SQL delete/drop request | **0** | Blocked before any LLM, for every role |
+| Off-topic question (weather, jokes, news…) | **0** | Polite "coding questions only" reply |
 | Normal Python code request | **4** | router → requirements → code_gen → test_gen |
 
 ## Team Split
@@ -105,14 +108,14 @@ The model detects sentiment, but **code makes the escalation decision**. Frustra
 | # | Requirement | Status | Tests |
 |---|-------------|--------|-------|
 | Level 1 | Core pipeline (Router → Requirements → CodeGen → TestGen → Orchestrator) | Done | 4 agents + graph |
-| R1 | Identity and Privacy (mandatory) | Done | 21 tests |
-| R2 | Safe Execution (mandatory) | Done | 30 tests |
+| R1 | Identity and Privacy (mandatory) | Done | 24 tests |
+| R2 | Safe Execution (mandatory) | Done | 33 tests |
 | R3 | Escalation and Handoff (chosen) | Done | 15 tests |
-| R5 | Resilience (chosen) | Done | 18 tests |
+| R5 | Resilience (chosen) | Done | 50 tests |
 | R6 | Evals as a Gate (mandatory) | Done | 12 golden set + CI |
-| R7 | Safe SQL Agent (bonus +10) | Done | 19 tests |
+| R7 | Safe SQL Agent (bonus +10) | Done | 31 tests |
 | Bonus | Gradio chat interface (+10) | Done | — |
-| **Total** | | | **142 tests** |
+| **Total** | | | **192 tests** |
 
 ## Quick Start
 
@@ -134,7 +137,7 @@ cp .env.example .env
 # GROQ_API_KEY=your-key-here
 # Get a free key at: https://console.groq.com/keys
 
-# 5. Run tests (golden set gate — should show 142 passed)
+# 5. Run tests (golden set gate — should show 192 passed)
 python -m pytest tests/ -v
 
 # 6. Run the demo (all 8 scenarios in terminal)
@@ -152,9 +155,55 @@ python gradio_app.py
 
 - **Chat** with live "working" feedback, copy buttons, and a downloadable full report per run.
 - **User switcher** — identity and role come from config; each user has a separate chat history.
-- **Status panel** — remaining hourly runs (quota), frustration score, policy denials, and failed test runs against their escalation thresholds.
 - **Human approval** — code flagged `needs_approval` (e.g. network modules, `open()`) pauses with **Approve & Run** / **Reject** buttons instead of running automatically.
-- **Chaos Mode** toggle and one-click **Quick tests** for every scenario (Python, denied, safety, SQL).
+- **Instructor = admin** — instructors can ask "show all student runs" (or name a student, e.g. `student_b`) to see every student's run history with a downloadable report, and can run SQL on every table (see below). Students can only see their own runs and can never gain privileges through chat.
+
+### Roles & permissions
+
+| | Student | Instructor (admin) |
+|---|---|---|
+| Python code generation + sandbox | ✅ | ✅ |
+| View other users' runs | ❌ | ✅ |
+| SQL `SELECT` | ❌ | ✅ every table (incl. `users`, PII columns masked) |
+| SQL `INSERT` / `UPDATE` | ❌ | ✅ |
+| SQL `DELETE` / `DROP` / `TRUNCATE` / `ALTER` | ❌ | ❌ |
+| Delete / create files, shell commands, malicious code | ❌ | ❌ |
+- **Coding questions only** — off-topic messages (weather, jokes, news, greetings…) get a polite reply asking for a coding question, with no LLM call.
+- **Chaos Mode** toggle and one-click **Quick tests** for every scenario (Python, searching, sorting, denied, safety, SQL).
+
+## Event Logging (privacy)
+
+Every pipeline stage writes one JSON line to the `codeforge.events` logger — **only after PII masking**:
+
+```
+INFO codeforge.events | {"event": "request_received", "user": "student_a", "request": "my key is [SECRET], write a fizzbuzz function", "pii_masked": true}
+INFO codeforge.events | {"event": "template_served", "user": "student_a", "function": "fizzbuzz"}
+INFO codeforge.events | {"event": "sandbox_run", "user": "student_a", "tier": "template", "passed": true, "tests_passed": 5, "tests_failed": 0}
+```
+
+- The raw message is never logged; `request_received` is emitted only after `mask_pii` runs.
+- `log_event` (`app/event_log.py`) masks every string field **again** before writing, so a caller mistake can't leak a secret.
+- Provider error messages (which can echo the prompt) are masked before they reach the log or the downloadable report.
+- Chat history stores the masked version of what you typed.
+- Log level comes from `CODEFORGE_LOG_LEVEL` in `.env` (default `INFO`).
+
+Events: `request_received`, `role_spoof_denied`, `access_denied`, `admin_access_confirmed`, `student_runs_viewed`, `request_denied`, `escalated`, `off_topic_declined`, `sql_denied`, `sql_error`, `sql_executed`, `template_served`, `llm_generated`, `llm_attempt_failed`, `generation_failed`, `code_denied`, `approval_required`, `approval_resolved`, `cache_hit`, `quota_exceeded`, `sandbox_run`.
+
+## LLM Setup Notes
+
+- **TLS behind a corporate proxy:** `app/config.py` uses [`truststore`](https://pypi.org/project/truststore/) so Python verifies certificates with the OS trust store (macOS Keychain / Windows cert store). Verification stays fully on; this only fixes Python 3.14 rejecting proxy CAs that the OS trusts (`CERTIFICATE_VERIFY_FAILED … Basic Constraints of CA cert not marked critical`).
+- **Groq free-tier limits:** the free tier allows ~1000 output tokens per minute, so agents cap `max_tokens` (600, or 950 for code generation — see `LLMConfig`). On a 429 the UI waits for the time Groq suggests (max 20 s) and retries.
+- **Very large requests** (e.g. a full expression parser) can exceed the output cap; the UI says so and suggests splitting the request.
+
+## Windows Notes
+
+The sandbox runs pytest with a minimal environment so no secrets (like `GROQ_API_KEY`) leak into generated code. On Windows it also passes `SYSTEMROOT`, `SYSTEMDRIVE`, `WINDIR`, `TEMP`, `TMP`, `PATHEXT` and `COMSPEC` — without `SYSTEMROOT`, Winsock can't initialise and pytest plugins that import `asyncio` (e.g. anyio) crash with:
+
+```
+OSError: [WinError 10106] The requested service provider could not be loaded or initialized
+```
+
+Activate the virtual environment on Windows with `.venv\Scripts\activate` instead of `source .venv/bin/activate`.
 
 ## Project Structure
 
@@ -166,6 +215,7 @@ CodeForge/
 │   ├── state.py               # LangGraph TypedDict state
 │   ├── graph.py               # LangGraph orchestrator (14 nodes)
 │   ├── metering.py            # Token/cost tracking callback
+│   ├── event_log.py           # Structured audit log — masks every field before writing
 │   ├── agents/                # Level 1: LLM agents
 │   │   ├── router.py          # Classifies request type (Python/SQL/unsupported)
 │   │   ├── requirements.py    # Extracts function name, params, edge cases
@@ -188,14 +238,14 @@ CodeForge/
 │   ├── resilience/            # R5: Resilience
 │   │   ├── retry.py           # Full-jitter backoff (429, 5xx, timeout)
 │   │   ├── circuit_breaker.py # Circuit breaker (open after 5 failures)
-│   │   ├── templates.py       # 6 deterministic templates with complexity
+│   │   ├── templates.py       # 14 sandbox-verified templates (typo-tolerant matching)
 │   │   ├── chaos.py           # Chaos switch (60% failure simulation)
 │   │   └── fallback.py        # Primary → fallback → template → honest failure
 │   └── sql/                   # R7: Safe SQL Agent (bonus)
 │       ├── database.py        # Sample SQLite DB (sales, employees, users)
-│       ├── validator.py       # sqlglot-based validation (SELECT only, table allow-list)
-│       └── agent.py           # SQL generation + validation + read-only execution
-├── tests/                     # 142 unit + integration tests
+│       ├── validator.py       # sqlglot-based, role-aware validation (no DELETE/DROP ever)
+│       └── agent.py           # SQL generation + validation + execution + PII column masking
+├── tests/                     # 192 unit + integration tests
 │   ├── test_privacy.py        # R1: PII masking (Luhn, regex, negatives)
 │   ├── test_policy.py         # R2: Request safety + code policy
 │   ├── test_escalation_rules.py  # R3: All escalation rules

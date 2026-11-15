@@ -8,6 +8,7 @@ import time
 import logging
 from functools import wraps
 from typing import Callable, TypeVar, Any
+from app.security.privacy import mask_pii
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ def retry_with_jitter(max_retries: int = 3, base: float = BASE_DELAY, cap: float
                     delay = full_jitter_delay(attempt, base, cap)
                     logger.warning(
                         f"Retry {attempt+1}/{max_retries} for {func.__name__} "
-                        f"after {delay:.2f}s: {exc}"
+                        f"after {delay:.2f}s: {mask_pii(str(exc))}"
                     )
                     time.sleep(delay)
             raise last_exc  # type: ignore

@@ -24,8 +24,11 @@ Constraints: {constraints}
 
 Rules:
 - Write clean, production-quality Python code with type hints
+- Keep it concise: a one-line docstring, no inline comments, no example usage (output is size-limited)
 - Handle the edge cases listed
 - Do NOT include any imports of os, sys, subprocess, shutil, or pathlib
+- Do NOT use eval, exec, compile, __import__, globals or locals — implement logic explicitly
+  (e.g. a calculator takes two numbers and an operator string and dispatches with if/elif or a dict)
 - Do NOT include any file I/O, network calls, or system commands
 - Return ONLY the function code in the "code" field, no test code
 - Always analyze and include time_complexity and space_complexity
@@ -36,6 +39,7 @@ def create_code_gen_agent():
     llm = ChatGroq(
         model=LLM_CONFIG.large_model,
         temperature=LLM_CONFIG.temperature,
+        max_tokens=LLM_CONFIG.code_max_tokens,
     )
     return llm.with_structured_output(GeneratedCode, method="json_mode")
 

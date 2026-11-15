@@ -9,6 +9,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Verify TLS with the OS trust store (macOS Keychain / Windows cert store). Python 3.14's stricter
+# X.509 checks reject some corporate proxy CAs that the OS itself trusts. Verification stays on.
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 # ── User configuration (R1: identity from config, not from message) ──────────
 
 @dataclass(frozen=True)
@@ -44,6 +52,9 @@ class LLMConfig:
     fallback_model: str = "allam-2-7b"
     temperature: float = 0.0
     max_retries: int = 3
+    # Groq free tier allows ~1000 output tokens/minute; an uncapped request reserves 2048 and gets a 429.
+    max_tokens: int = 600
+    code_max_tokens: int = 950  # code generation needs the most room; must stay under the 1000/min cap
 
 LLM_CONFIG = LLMConfig()
 
