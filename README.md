@@ -111,7 +111,7 @@ The model detects sentiment, but **code makes the escalation decision**. Frustra
 | R5 | Resilience (chosen) | Done | 18 tests |
 | R6 | Evals as a Gate (mandatory) | Done | 12 golden set + CI |
 | R7 | Safe SQL Agent (bonus +10) | Done | 19 tests |
-| Bonus | Streamlit + Gradio UI (+10) | Done | — |
+| Bonus | Gradio chat interface (+10) | Done | — |
 | **Total** | | | **142 tests** |
 
 ## Quick Start
@@ -140,14 +140,21 @@ python -m pytest tests/ -v
 # 6. Run the demo (all 8 scenarios in terminal)
 python demo.py
 
-# 7. Launch the UI (pick one)
-python gradio_app.py           # Opens at http://localhost:7860
-# OR
-streamlit run streamlit_app.py # Opens at http://localhost:8501
+# 7. Launch the UI
+python gradio_app.py
+# Opens at http://localhost:7860
 ```
 
-> **That's it.** Open the URL in your browser and start using CodeForge.
+> **That's it.** Open `http://localhost:7860` in your browser and start using CodeForge.
 > Each person runs it on their own machine — no deployment needed.
+
+### UI features
+
+- **Chat** with live "working" feedback, copy buttons, and a downloadable full report per run.
+- **User switcher** — identity and role come from config; each user has a separate chat history.
+- **Status panel** — remaining hourly runs (quota), frustration score, policy denials, and failed test runs against their escalation thresholds.
+- **Human approval** — code flagged `needs_approval` (e.g. network modules, `open()`) pauses with **Approve & Run** / **Reject** buttons instead of running automatically.
+- **Chaos Mode** toggle and one-click **Quick tests** for every scenario (Python, denied, safety, SQL).
 
 ## Project Structure
 
@@ -200,8 +207,7 @@ CodeForge/
 │   └── test_integration.py    # End-to-end pipeline tests
 ├── golden_set.json            # R6: 22 evaluation cases
 ├── demo.py                    # Demo script (8 scenarios)
-├── streamlit_app.py           # Streamlit UI (main)
-├── gradio_app.py              # Gradio UI (alternative)
+├── gradio_app.py              # Gradio chat UI
 ├── .env.example               # Environment template
 ├── requirements.txt           # Dependencies
 └── .github/workflows/ci.yml   # CI gate (pytest on push)
