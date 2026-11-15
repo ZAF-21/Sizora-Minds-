@@ -110,6 +110,24 @@ def _parse_test_output(test_output: str) -> tuple[int, int, list[str]]:
     return count("passed"), count("failed") + count("error"), lines
 
 
+def _failure_reasons(test_output: str, max_tests: int = 5) -> list[str]:
+    """Pull the failing assertion out of pytest's --tb=short FAILURES section, e.g.
+    '❌ test_x' + '    assert len(result) == 13' + '    AssertionError: assert 12 == 13'."""
+    if "FAILURES" not in test_output:
+        return []
+    section = re.split(r"=+ (?:short test summary info|warnings summary) =+",
+                       test_output.split("FAILURES", 1)[1])[0]
+    reasons: list[str] = []
+    for block in re.split(r"\n_{3,} (\S+) _{3,}\n", section)[1:][: max_tests * 2]:
+        if re.fullmatch(r"\S+", block.strip()) and not block.startswith(" "):
+            reasons.append(f"❌ {block.strip()}")
+            continue
+        detail = [ln.strip() for ln in block.splitlines()
+                  if ln.strip() and not re.match(r"^\S+\.py:\d+:", ln.strip()) and not ln.startswith("=")]
+        reasons.extend("    " + ln.removeprefix("E").strip() for ln in detail[:4])
+    return reasons
+
+
 def _render_execution(report: ExecutionReport, time_c: str, space_c: str) -> list[str]:
     """User-facing markdown blocks for a sandbox run, built from the real pytest result."""
     n_passed, n_failed, test_lines = _parse_test_output(report.test_output)
@@ -136,6 +154,11 @@ def _render_execution(report: ExecutionReport, time_c: str, space_c: str) -> lis
 
     if test_lines:
         parts.append(f"**Test results ({n_passed}/{n_total} passed):**\n```\n" + "\n".join(test_lines) + "\n```")
+        reasons = _failure_reasons(report.test_output)
+        if reasons:
+            parts.append("**Why it failed:**\n```\n" + "\n".join(reasons) + "\n```\n"
+                         "*The tests are AI-generated too — a failure can mean the code is wrong **or** the "
+                         "test's expectation is. Check the assertion above.*")
     elif not report.tests_passed and report.test_output.strip():
         parts.append("**Error output:**\n```\n" + report.test_output.strip()[-1500:] + "\n```")
     return parts
@@ -715,8 +738,9 @@ def chat(message: str, user_id: str, chaos_mode: bool):
         yield gr.update(), list(history), gr.update(), _approval_update(user_id)
         return
 
-    # Store the masked text, so a pasted secret never sits in chat history.
-    history.append({"role": "user", "content": mask_pii(message)})
+    # The user's own bubble shows exactly what they typed (so the demo can show the contrast);
+    # everything CodeForge outputs — reply, logs, reports, tickets — uses the masked text.
+    history.append({"role": "user", "content": message})
     if us["pending_approval"]:
         history.append({"role": "assistant", "content":
                         "⏸️ You have code waiting for review. Please **Approve & Run** or **Reject** it first."})

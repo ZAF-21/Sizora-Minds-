@@ -152,8 +152,12 @@ class TestEventLogMasking:
             assert secret not in caplog.text
             assert secret not in display
 
-    def test_chat_history_stores_masked_message(self):
+    def test_secret_shown_only_in_user_bubble(self, caplog):
         import gradio_app
-        list(gradio_app.chat(SECRET_MESSAGE, "student_b", False))
-        user_turns = [m["content"] for m in gradio_app._ustate("student_b")["chat_history"] if m["role"] == "user"]
-        assert user_turns and all(s not in user_turns[-1] for s in RAW_SECRETS)
+        with caplog.at_level("DEBUG"):
+            list(gradio_app.chat(SECRET_MESSAGE, "student_b", False))
+        history = gradio_app._ustate("student_b")["chat_history"]
+        assert history[-2]["content"] == SECRET_MESSAGE  # user's bubble: as typed
+        for secret in RAW_SECRETS:
+            assert secret not in history[-1]["content"]  # CodeForge's reply: masked
+            assert secret not in caplog.text
